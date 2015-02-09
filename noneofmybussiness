@@ -1,0 +1,143 @@
+local passfile="/data/server/htdigest"
+local realm="pppei.net"
+local nonce_timeout=60
+local nonce_max_use=60
+local ngx_nonce=ngx.shared.nonce
+
+function gen_nonce(nonce)
+    local  charset= "0123456789,.abcdefghijklmnopqrstuvwxyz-=_+!ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    math.randomseed(os.time())
+    local nonce=''
+    for a = 1, 64 do
+        local index=math.random(999999)%string.len(charset)
+        nonce=nonce .. string.sub(charset,index+1,index+1);
+    end
+    ngx_nonce:set(nonce,1,nonce_timeout)
+    return nonce
+end
+
+function gen_res(ha1,method,uri,nonce,nc,cnonce,qop)
+    -- local ha1=ngx.md5(user .. ":" .. realm .. ":" .. pass)
+    local ha2=ngx.md5(method .. ":" .. uri)
+    if qop then
+        return ngx.md5(ha1 .. ":" .. nonce .. ":" .. nc .. ":" .. cnonce .. ":" .. qop .. ":" .. ha2 )
+    else
+        return ngx.md5(ha1 .. ":" .. nonce .. ":" .. ha2)
+    end
+    -- ngx.say(ha1)
+    -- ngx.say(ha2)
+    -- ngx.say(res)
+end
+
+function challenge (stale)
+    if stale then
+        stale="stale=true, "
+    else
+        stale=""
+    end
+    nonce=gen_nonce()
+    ngx.header['WWW-Authenticate']="Digest realm=\"" .. realm .. "\", nonce=\"" .. nonce .. "\", algorithm=MD5, " .. stale .. "qop=\"auth\""
+    ngx.exit(401)
+end
+
+function auth(pass,method,uri,nonce,nc,cnonce,cres,qop)
+    v,f,s=ngx_nonce:get_stale(nonce)
+    if s then
+        -- ngx_nonce:delete(nonce)
+        return false,true
+    elseif v then
+        if v>nonce_max_use then
+            ngx_nonce:delete(nonce)
+            return false,true
+        end
+    end
+    res=gen_res(pass,method,uri,nonce,nc,cnonce,qop)
+    if cres == res and not v then
+        return false,true
+    elseif cres ~= res then
+        ngx_nonce:delete(nonce)
+        return false
+    end
+    ngx_nonce:incr(nonce,1)
+    return true
+end
+
+local header=ngx.req.get_headers()["Authorization"]
+if not header then
+    challenge()
+end
+
+local auth_method = ngx.re.match(header,'^Digest')
+if not auth_method then
+    challenge()
+end
+
+local nonce,err = ngx.re.match(header,'nonce="(.+?)"')
+local cuser,err = ngx.re.match(header,'username="(.+?)"')
+local crealm,err =ngx.re.match(header,'realm="(.+?)"')
+local cnonce,err=ngx.re.match(header,'cnonce="(.+?)"')
+local nc,err=ngx.re.match(header,'nc=([0-9a-fA-F]+)')
+local curi,err=ngx.re.match(header,'uri="(.+?)"')
+local cres,err=ngx.re.match(header,'response="(.+?)"')
+local qop,err=ngx.re.match(header,'qop=(\\b\\w+?\\b)')
+local method=ngx.req.get_method()
+
+if qop then
+    qop=qop[1]
+end
+if nc and cnonce then
+    nc=nc[1]
+    cnonce=cnonce[1]
+else
+    cnonce=''
+    nc=''
+end
+
+if nonce and cuser and crealm and curi and cres and method then
+    nonce=nonce[1]
+    cuser=cuser[1]
+    crealm=crealm[1]
+    cres=cres[1]
+    curi=curi[1]
+    if crealm ~= realm or curi ~= ngx.var.request_uri or ( qop ~= "auth" and qop ) then
+        ngx.status=400
+        ngx.say("bad value")
+        ngx.exit(400)
+    end
+    local file=io.open(passfile)
+    if file then
+        for line in file:lines() do
+            for u,r,p in string.gmatch(line,'(.+):(.+):(.+)') do
+                if u==cuser and r == realm then
+                    pass=p
+                    user_found=true
+                    break
+                end
+            end
+            if user_found then
+                break
+            end
+        end
+        file:close()
+    else
+        file:close()
+        ngx.status=500
+        ngx.say('password file not found')
+        ngx.exit(200)
+    end
+    if not user_found then
+        challenge()
+    end
+else
+    challenge()
+end
+
+local ret,stale= auth(pass,method,curi,nonce,nc,cnonce,cres,qop) 
+if stale then
+    challenge(true)
+elseif not ret then
+    challenge()
+else
+    local rspauth=gen_res(pass,'',curi,nonce,nc,cnonce,qop)
+    ngx.header["Authentication-Info"]='rspauth="' .. rspauth .. '", cnonce="' .. cnonce ..'", nc=' .. nc ..', qop=auth'
+end
