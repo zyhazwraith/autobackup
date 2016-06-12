@@ -1,0 +1,32 @@
+root@HSW-MOB-DP-A-ubuntu:~/wayland/weston# make 
+make  all-am
+make[1]: Entering directory `/root/wayland/weston'
+  CC       shared/libshared_cairo_la-cairo-util.lo
+  CC       shared/libshared_cairo_la-frame.lo
+  CCLD     libshared-cairo.la
+  CCLD     x11-backend.la
+  CC       src/wayland_backend_la-compositor-wayland.lo
+  CCLD     wayland-backend.la
+  CC       xwayland/xwayland_la-window-manager.lo
+  CC       xwayland/xwayland_la-selection.lo
+  CC       xwayland/xwayland_la-dnd.lo
+  CC       xwayland/xwayland_la-launcher.lo
+  CCLD     xwayland.la
+  CC       clients/libtoytoolkit_la-window.lo
+  CCLD     libtoytoolkit.la
+  CC       tests/libtest_client_la-weston-test-client-helper.lo
+  CCLD     libtest-client.la
+  CC       clients/weston_terminal-terminal.o
+  CCLD     weston-terminal
+./.libs/libtoytoolkit.a(libtoytoolkit_la-window.o): In function `egl_window_surface_swap':
+/root/wayland/weston/clients/window.c:556: undefined reference to `cairo_gl_surface_swapbuffers'
+./.libs/libtoytoolkit.a(libtoytoolkit_la-window.o): In function `egl_window_surface_prepare':
+/root/wayland/weston/clients/window.c:544: undefined reference to `cairo_gl_surface_set_size'
+./.libs/libtoytoolkit.a(libtoytoolkit_la-window.o): In function `egl_window_surface_create':
+/root/wayland/weston/clients/window.c:657: undefined reference to `cairo_gl_surface_create_for_egl'
+./.libs/libtoytoolkit.a(libtoytoolkit_la-window.o): In function `init_egl':
+/root/wayland/weston/clients/window.c:5596: undefined reference to `cairo_egl_device_create'
+collect2: error: ld returned 1 exit status
+make[1]: *** [weston-terminal] Error 1
+make[1]: Leaving directory `/root/wayland/weston'
+make: *** [all] Error 2
